@@ -38,6 +38,10 @@ export default function App() {
     }
   }, []);
 
+  const handleRetry = useCallback(() => {
+    if (location) void handleLocationSelect({ lat: location.lat, lng: location.lng });
+  }, [location, handleLocationSelect]);
+
   const handleClear = useCallback(() => {
     requestRef.current?.abort();
     setLocation(null);
@@ -61,7 +65,7 @@ export default function App() {
       </CanvasErrorBoundary>
       <Loader />
 
-      <InfoPanel location={location} loading={loading} onClear={handleClear} />
+      <InfoPanel location={location} loading={loading} onClear={handleClear} onRetry={handleRetry} />
       <SettingsPanel settings={settings} onChange={update} onPreset={applyPreset} onReset={reset} />
       <RiskLegend />
       <p className="hint">Drag to rotate · Scroll or pinch to zoom · Click to select</p>

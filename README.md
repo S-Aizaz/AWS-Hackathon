@@ -3,7 +3,8 @@
 An interactive 3D Earth built with React, TypeScript, Vite, three.js, `@react-three/fiber` and `@react-three/drei`.
 
 **Phase 1 (current):** realistic globe (4K day map, terrain relief, sun glint on the oceans, city lights on the night side, clouds, atmosphere, stars), auto-rotation that pauses while you interact, click-to-select with lat/lng, adjustable lighting, and a risk-zone overlay showing sample data.
-**Later phases:** weather for the selected point and live safe/critical zones. The extension points are already in place (see [Extending](#extending)).
+**Phase 2 (current):** click anywhere to see **live weather** (current conditions + 5-day forecast) and the **place name** in the panel's Weather / Details tabs.
+**Next:** live safe/critical zones. The extension points are already in place (see [Extending](#extending)).
 
 ## Run it
 
@@ -59,6 +60,19 @@ done
 
 If a texture is missing, the app shows an error screen pointing back here instead of rendering a blank canvas.
 
+## Data sources
+
+| Data | Source | Key? | Notes |
+| --- | --- | --- | --- |
+| Weather (current + 5-day) | [Open-Meteo](https://open-meteo.com/) forecast API | No | CC BY 4.0, attribution shown in the panel. Cached 10 min per ~1 km cell. |
+| Place name / address | [OpenStreetMap Nominatim](https://nominatim.org/) reverse geocoding | No | ODbL, attribution shown. Max 1 request/s (queued in the app), cached 24 h. |
+
+Both are called directly from the browser (both send CORS headers), so there's no backend to run or deploy.
+
+**About MCP servers:** the [OSM MCP server](https://github.com/jagan-shanmugam/osm-mcp-server) is a stdio tool server for AI assistants (Claude Desktop, Cursor, …); a web page can't connect to it. Its `reverse_geocode` tool calls the same Nominatim endpoint used here, so the app gets the same OpenStreetMap data directly. It has no weather tools. If you later want the app to call MCP servers for real (e.g. through an AI agent on AWS), add a small backend that runs an MCP client and expose it through `services/locationService.ts`; the UI won't need to change.
+
+**Fair use:** the public Nominatim server is for light use. Before a public launch, switch `NOMINATIM_URL` in [src/services/placeService.ts](src/services/placeService.ts) to your own instance or a commercial geocoder, and check Open-Meteo's [terms](https://open-meteo.com/en/terms) (free for non-commercial use).
+
 ## Project structure
 
 ```
@@ -75,15 +89,20 @@ src/
     SettingsPanel.tsx         Spin / Clouds buttons and the Display panel
     LocationMarker.tsx        Pulsing marker at a lat/lng
     RiskOverlay.tsx           Coloured geodesic circles for RiskZone[]
-    InfoPanel.tsx             Side panel (Coordinates / Weather / Risk status)
+    InfoPanel.tsx             Side panel: place name, coordinates, Weather / Details tabs
+    WeatherTab.tsx            Current conditions, stats grid, 5-day forecast, loading/error states
     RiskLegend.tsx            Colour legend
     CanvasErrorBoundary.tsx   Friendly error if WebGL or textures fail
   hooks/useIdleAutoRotate.ts  Spin on/off, pause-on-interaction / resume-after-3 s logic
   hooks/useGlobeSettings.ts   Settings state, persisted to localStorage
-  services/locationService.ts getLocationInfo(lat, lng) stub (plug the weather API in here)
+  services/locationService.ts getLocationInfo(lat, lng): the only data entry point the UI uses
+  services/weatherService.ts  Open-Meteo client (URL builder, response parser, cache)
+  services/placeService.ts    Nominatim reverse geocoding (rate-limited, cached)
+  services/http.ts            fetch + timeout, friendly error messages, TTL cache
   data/sampleZones.ts         Hard-coded demo RiskZone[]
   utils/geo.ts                latLngToVector3, vector3ToLatLng, worldPointToLatLng, distance helpers
-  utils/geo.test.ts           Vitest unit tests (+ settings.test.ts)
+  utils/weather.ts            WMO weather codes → label/icon, compass, local-time formatting
+  *.test.ts                   Vitest unit tests (geo math, settings, weather helpers, services with mocked fetch)
 ```
 
 Rendering, interaction, overlays and data are separate: `Globe` knows nothing about risk or weather, and the overlays know nothing about where their data comes from.
@@ -111,7 +130,8 @@ The reverse direction needs no compensation: markers and overlays are rendered *
 
 ## Extending
 
-- **Weather:** implement the fetch in `getLocationInfo` in [src/services/locationService.ts](src/services/locationService.ts) and fill in `name`, `weather` and `risk`. The `AbortSignal` is already wired, so a new click cancels a stale request. `InfoPanel` renders whatever comes back.
+- **More data per point:** add a service next to `weatherService.ts` and merge it in `getLocationInfo` ([src/services/locationService.ts](src/services/locationService.ts)). Requests already run in parallel, and a new click cancels stale ones.
+- **Risk from weather:** derive `risk` in `getLocationInfo` from `info.weather` (e.g. gusts > 60 km/h or a thunderstorm code → `critical`). The Details tab already shows it.
 - **Live risk zones:** replace `SAMPLE_RISK_ZONES` in [src/App.tsx](src/App.tsx) with fetched `RiskZone[]`. `<RiskOverlay zones={...} />` needs no changes. Colours come from `RISK_COLORS` in `config.ts`.
 - **"Is this point in a zone?":** `greatCircleDistanceKm(point, zone) <= zone.radiusKm` (in `utils/geo.ts`).
 
